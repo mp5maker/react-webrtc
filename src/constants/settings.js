@@ -11,12 +11,13 @@ export const WEBSOCKET_EVENTS = {
 };
 
 export const WEBSOCKET_CUSTOM_EVENTS = {
-  OFFER: "offer",
+  CANDIDATE: 'candidate'
 };
 
 export const PHONE = {
   CALL: "call",
   RECEIVE: "receive",
+  ICE_CANDIDATE: 'ice_candidate'
 };
 
 export const SERVER_PORT = 4000;

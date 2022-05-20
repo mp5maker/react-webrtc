@@ -59,7 +59,6 @@ const VideoChat = () => {
   const call = React.useCallback(async () => {
     const localStream = await createUserOneStream(); // Create Local Stream
     const remoteStream = await createUserTwoStream(); // Create Remote Stream
-    const peerConnection = createPeerConnection(); // Create Peer Connection
 
     // Push tracks from local stream to peer connection
     localStream.getTracks().forEach((track) => {
@@ -75,7 +74,16 @@ const VideoChat = () => {
 
     // Get candidates for caller,
     peerConnection.onicecandidate = (event) => {
-      console.log("🚀 ~ file: index.js ~ line 62 ~ init ~ event", event);
+      if (event.candidate) {
+        socket.emit(
+          WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
+          JSON.stringify({
+            candidate: event.candidate.toJSON(),
+            type: PHONE.CANDIDATE,
+            user: text,
+          })
+        );
+      }
     };
 
     // Create Offer
@@ -85,18 +93,31 @@ const VideoChat = () => {
     socket.send(
       JSON.stringify({
         event: WEBSOCKET_CUSTOM_EVENTS.OFFER,
-        type: "call",
+        type: PHONE.CALL,
         user: text,
         offer,
       })
     );
 
     setType(PHONE.CALL);
-  }, [text, socket]);
+  }, [text, socket, peerConnection]);
 
-  const answer = () => {
+  const answer = React.useCallback(() => {
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit(
+          WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
+          JSON.stringify({
+            candidate: event.candidate.toJSON(),
+            type: PHONE.CANDIDATE,
+            user: text,
+          })
+        );
+      }
+    };
+
     setType(PHONE.RECEIVE);
-  };
+  }, [peerConnection, text]);
 
   React.useEffect(() => {
     if (socket) {
@@ -112,8 +133,9 @@ const VideoChat = () => {
       socket.addEventListener(WEBSOCKET_EVENTS.MESSAGE, (event) => {
         const data = JSON.parse(get(event, "data", {}));
         const dataType = get(data, "type", "");
+        const dateUser = get(data, "user", "")
         // Receiving the answer from the other peer
-        if (dataType === PHONE.RECEIVE && type === PHONE.CALL) {
+        if (dataType === PHONE.RECEIVE && type === PHONE.CALL && dateUser !== text) {
           if (!peerConnection.currentRemoteDescription) {
             const callOffer = new RTCSessionDescription(
               get(data, "answer", {})
@@ -127,12 +149,14 @@ const VideoChat = () => {
         if (socket) socket.close();
       };
     }
-  }, [socket, peerConnection, type]);
+  }, [socket, peerConnection, type, text]);
 
   React.useEffect(() => {
     const socketString = `ws://localhost:${SERVER_PORT}/websockets`;
     const skt = new WebSocket(socketString);
     setSocket(skt);
+
+    createPeerConnection(); // Create Peer Connection
   }, []);
 
   return (
