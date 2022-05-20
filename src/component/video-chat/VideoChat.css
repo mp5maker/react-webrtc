@@ -1,0 +1,9 @@
+.videos {
+  padding: 2em;
+}
+
+.video-player {
+  background-color: black;
+  width: 100%;
+  height: 300px;
+}
