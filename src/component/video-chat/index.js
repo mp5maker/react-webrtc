@@ -79,7 +79,7 @@ const VideoChat = () => {
     // Get candidates for caller,
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        socket.emit(
+        socket.send(
           JSON.stringify({
             event: WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
             candidate: event.candidate.toJSON(),
@@ -109,7 +109,7 @@ const VideoChat = () => {
     // Get candidates for receiver
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
-        socket.emit(
+        socket.send(
           JSON.stringify({
             event: WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
             candidate: event.candidate.toJSON(),
@@ -203,7 +203,7 @@ const VideoChat = () => {
         if (socket) socket.close();
       };
     }
-  }, [socket, peerConnection, currentUser]);
+  }, [socket]);
 
   React.useEffect(() => {
     const socketString = `ws://localhost:${SERVER_PORT}/websockets`;

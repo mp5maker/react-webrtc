@@ -26,7 +26,7 @@ websocketServer.on("connection", (websocketConnection, connectionRequest) => {
   const [_path, params] = connectionRequest?.url.split("?");
   const connectionParams = queryString.parse(params);
 
-  console.log(connectionParams);
+  console.log("🚀 ~ file: index.js ~ line 30 ~ websocketServer.on ~ connectionParams", connectionParams)
 
   websocketConnection.on("message", (message) => {
     const parsedMessage = JSON.parse(message);
