@@ -1,8 +1,3 @@
-export const OFFER = {
-  local: "local_offer",
-  remote: "remote_offer",
-};
-
 export const WEBSOCKET_EVENTS = {
   OPEN: "open",
   CLOSE: "close",
@@ -11,13 +6,13 @@ export const WEBSOCKET_EVENTS = {
 };
 
 export const WEBSOCKET_CUSTOM_EVENTS = {
-  CANDIDATE: 'candidate'
+  CANDIDATE: "candidate",
+  OFFER: "offer",
 };
 
 export const PHONE = {
   CALL: "call",
-  RECEIVE: "receive",
-  ICE_CANDIDATE: 'ice_candidate'
+  ANSWER: "answer",
 };
 
 export const SERVER_PORT = 4000;

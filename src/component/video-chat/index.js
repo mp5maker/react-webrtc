@@ -22,11 +22,10 @@ const VideoChat = () => {
   const userTwoRef = React.useRef(null);
   const [peerConnection, setPeerConnection] = React.useState(null);
   const [socket, setSocket] = React.useState(null);
-  const [text, setText] = React.useState("");
-  const [type, setType] = React.useState(null);
+  const [currentUser, setCurrentUser] = React.useState("");
 
   const handleChangeText = React.useCallback(
-    (event) => setText(get(event, "target.value", "")),
+    (event) => setCurrentUser(get(event, "target.value", "")),
     []
   );
 
@@ -56,6 +55,11 @@ const VideoChat = () => {
     return offer;
   }, []);
 
+  const createAnswer = React.useCallback(async (peerConnection) => {
+    const answer = await peerConnection.createAnswer();
+    return answer;
+  }, []);
+
   const call = React.useCallback(async () => {
     const localStream = await createUserOneStream(); // Create Local Stream
     const remoteStream = await createUserTwoStream(); // Create Remote Stream
@@ -76,48 +80,60 @@ const VideoChat = () => {
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit(
-          WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
           JSON.stringify({
+            event: WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
             candidate: event.candidate.toJSON(),
-            type: PHONE.CANDIDATE,
-            user: text,
+            user: currentUser,
+            phoneType: PHONE.CALL,
           })
         );
       }
     };
 
     // Create Offer
-    const offer = await createOffer(peerConnection);
-    await peerConnection.setLocalDescription(offer); // add offer to peer connection
+    const offerDescription = await createOffer(peerConnection);
+    await peerConnection.setLocalDescription(offerDescription); // add offer to peer connection
 
+    // Send the offer
     socket.send(
       JSON.stringify({
         event: WEBSOCKET_CUSTOM_EVENTS.OFFER,
-        type: PHONE.CALL,
-        user: text,
-        offer,
+        offer: offerDescription,
+        user: currentUser,
+        phoneType: PHONE.CALL,
       })
     );
+  }, [currentUser, socket, peerConnection]);
 
-    setType(PHONE.CALL);
-  }, [text, socket, peerConnection]);
-
-  const answer = React.useCallback(() => {
+  const answer = React.useCallback(async () => {
+    // Get candidates for receiver
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit(
-          WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
           JSON.stringify({
+            event: WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
             candidate: event.candidate.toJSON(),
-            type: PHONE.CANDIDATE,
-            user: text,
+            user: currentUser,
+            phoneType: PHONE.ANSWER,
           })
         );
       }
     };
 
-    setType(PHONE.RECEIVE);
-  }, [peerConnection, text]);
+    // Create Answer
+    const answerDescription = await createAnswer();
+    await peerConnection.setLocalDescription(answerDescription); // add answer to peer connection
+
+    // Send the answer
+    socket.send(
+      JSON.stringify({
+        event: WEBSOCKET_CUSTOM_EVENTS.OFFER,
+        offer: answerDescription,
+        user: currentUser,
+        phoneType: PHONE.ANSWER,
+      })
+    );
+  }, [peerConnection, currentUser]);
 
   React.useEffect(() => {
     if (socket) {
@@ -132,16 +148,54 @@ const VideoChat = () => {
       );
       socket.addEventListener(WEBSOCKET_EVENTS.MESSAGE, (event) => {
         const data = JSON.parse(get(event, "data", {}));
-        const dataType = get(data, "type", "");
-        const dateUser = get(data, "user", "")
+        const dataEvent = get(data, "event", "");
+        const datePhoneType = get(data, "phoneType", "");
+        const dataAnswer = get(data, "answer", null);
+        const dataOffer = get(data, "offer", null);
+        const dataCandidate = get(data, "candidate", null);
+
+        /**
+         * Events from the call
+         */
         // Receiving the answer from the other peer
-        if (dataType === PHONE.RECEIVE && type === PHONE.CALL && dateUser !== text) {
+        if (
+          dataEvent === WEBSOCKET_CUSTOM_EVENTS.OFFER &&
+          datePhoneType === PHONE.ANSWER
+        ) {
           if (!peerConnection.currentRemoteDescription) {
-            const callOffer = new RTCSessionDescription(
-              get(data, "answer", {})
-            );
-            peerConnection.setRemoteDescripton(callOffer);
+            const answerDescription = new RTCSessionDescription(dataAnswer);
+            peerConnection.setRemoteDescripton(answerDescription);
           }
+        }
+        // Receiving the ice candidates from the other peer
+        if (
+          dataEvent === WEBSOCKET_CUSTOM_EVENTS.CANDIDATE &&
+          datePhoneType === PHONE.ANSWER
+        ) {
+          const candidate = new RTCIceCandidate(dataCandidate);
+          peerConnection.addIceCandidate(candidate);
+        }
+
+        /**
+         * Events from the answer
+         */
+        // Receiving the offer from the other peer
+        if (
+          dataEvent === WEBSOCKET_CUSTOM_EVENTS.OFFER &&
+          datePhoneType === PHONE.CALL
+        ) {
+          if (!peerConnection.currentRemoteDescription) {
+            const offerDescription = new RTCSessionDescription(dataOffer);
+            peerConnection.setRemoteDescripton(offerDescription);
+          }
+        }
+        // Receiving the ice candidates from the other peer
+        if (
+          dataEvent === WEBSOCKET_CUSTOM_EVENTS.CANDIDATE &&
+          datePhoneType === PHONE.CALL
+        ) {
+          const candidate = new RTCIceCandidate(dataCandidate);
+          peerConnection.addIceCandidate(candidate);
         }
       });
 
@@ -149,7 +203,7 @@ const VideoChat = () => {
         if (socket) socket.close();
       };
     }
-  }, [socket, peerConnection, type, text]);
+  }, [socket, peerConnection, currentUser]);
 
   React.useEffect(() => {
     const socketString = `ws://localhost:${SERVER_PORT}/websockets`;
@@ -164,11 +218,11 @@ const VideoChat = () => {
       <div>
         <input
           type="text"
-          value={text}
+          value={currentUser}
           placeholder="username"
           onChange={handleChangeText}
         />
-        {text ? (
+        {currentUser ? (
           <>
             <button onClick={call}>Call</button>
             <button onClick={answer}>Answer</button>
