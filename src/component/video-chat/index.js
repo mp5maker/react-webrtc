@@ -35,34 +35,15 @@ const VideoChat = () => {
     return peerConnection;
   };
 
-  const createUserTwoStream = React.useCallback(() => {
-    const userTwoStream = new MediaStream();
-    if (userTwoRef.current) userTwoRef.current.srcObject = userTwoStream;
-    return userTwoStream;
-  }, []);
-
-  const createUserOneStream = React.useCallback(async () => {
-    const userOneStream = await navigator.mediaDevices.getUserMedia({
+  /**
+   * Starting the webcam
+   */
+  const startWebcam = React.useCallback(async () => {
+    const localStream = await navigator.mediaDevices.getUserMedia({
       video: true,
       audio: false,
     });
-    if (userOneRef.current) userOneRef.current.srcObject = userOneStream;
-    return userOneStream;
-  }, []);
-
-  const createOffer = React.useCallback(async (peerConnection) => {
-    const offer = await peerConnection.createOffer();
-    return offer;
-  }, []);
-
-  const createAnswer = React.useCallback(async (peerConnection) => {
-    const answer = await peerConnection.createAnswer();
-    return answer;
-  }, []);
-
-  const call = React.useCallback(async () => {
-    const localStream = await createUserOneStream(); // Create Local Stream
-    const remoteStream = await createUserTwoStream(); // Create Remote Stream
+    const remoteStream = new MediaStream();
 
     // Push tracks from local stream to peer connection
     localStream.getTracks().forEach((track) => {
@@ -76,6 +57,14 @@ const VideoChat = () => {
       });
     };
 
+    if (userOneRef.current) userOneRef.current.srcObject = localStream;
+    if (userTwoRef.current) userTwoRef.current.srcObject = remoteStream;
+  }, [peerConnection]);
+
+  /**
+   * Initiate a call
+   */
+  const call = React.useCallback(async () => {
     // Get candidates for caller,
     peerConnection.onicecandidate = (event) => {
       if (event.candidate) {
@@ -91,7 +80,7 @@ const VideoChat = () => {
     };
 
     // Create Offer
-    const offerDescription = await createOffer(peerConnection);
+    const offerDescription = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offerDescription); // add offer to peer connection
 
     // Send the offer
@@ -105,6 +94,9 @@ const VideoChat = () => {
     );
   }, [currentUser, socket, peerConnection]);
 
+  /**
+   * Receives the call
+   */
   const answer = React.useCallback(async () => {
     // Get candidates for receiver
     peerConnection.onicecandidate = (event) => {
@@ -121,7 +113,7 @@ const VideoChat = () => {
     };
 
     // Create Answer
-    const answerDescription = await createAnswer();
+    const answerDescription = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answerDescription); // add answer to peer connection
 
     // Send the answer
@@ -136,7 +128,7 @@ const VideoChat = () => {
   }, [peerConnection, currentUser]);
 
   React.useEffect(() => {
-    if (socket) {
+    if (socket && peerConnection) {
       socket.addEventListener(WEBSOCKET_EVENTS.OPEN, () =>
         console.debug("WebSocket is open")
       );
@@ -153,6 +145,7 @@ const VideoChat = () => {
         const dataAnswer = get(data, "answer", null);
         const dataOffer = get(data, "offer", null);
         const dataCandidate = get(data, "candidate", null);
+        const dataUser = get(data, "user", "");
 
         /**
          * Events from the call
@@ -163,8 +156,9 @@ const VideoChat = () => {
           datePhoneType === PHONE.ANSWER
         ) {
           if (!peerConnection.currentRemoteDescription) {
+            console.log(`Received answer from ${dataUser}`);
             const answerDescription = new RTCSessionDescription(dataAnswer);
-            peerConnection.setRemoteDescripton(answerDescription);
+            peerConnection.setRemoteDescription(answerDescription);
           }
         }
         // Receiving the ice candidates from the other peer
@@ -186,7 +180,7 @@ const VideoChat = () => {
         ) {
           if (!peerConnection.currentRemoteDescription) {
             const offerDescription = new RTCSessionDescription(dataOffer);
-            peerConnection.setRemoteDescripton(offerDescription);
+            peerConnection.setRemoteDescription(offerDescription);
           }
         }
         // Receiving the ice candidates from the other peer
@@ -203,7 +197,7 @@ const VideoChat = () => {
         if (socket) socket.close();
       };
     }
-  }, [socket]);
+  }, [socket, peerConnection]);
 
   React.useEffect(() => {
     const socketString = `ws://localhost:${SERVER_PORT}/websockets`;
@@ -216,6 +210,7 @@ const VideoChat = () => {
   return (
     <>
       <div>
+        <button onClick={startWebcam}>Start Webcam</button>
         <input
           type="text"
           value={currentUser}
