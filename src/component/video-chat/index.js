@@ -1,12 +1,18 @@
 import get from "lodash/get";
 import React from "react";
-import {
-  PHONE,
-  SERVER_PORT,
-  WEBSOCKET_CUSTOM_EVENTS,
-  WEBSOCKET_EVENTS,
-} from "../../constants/settings";
 import "./VideoChat.css";
+
+export const WEBSOCKET_EVENTS = {
+  OPEN: "open",
+  CLOSE: "close",
+  ERROR: "error",
+  MESSAGE: "message",
+};
+
+export const WEBSOCKET_CUSTOM_EVENTS = {
+  CANDIDATE: "candidate",
+  DESCRIPTION: "description",
+};
 
 const servers = {
   iceServers: [
@@ -17,23 +23,20 @@ const servers = {
   iceCandidatePoolSize: 10,
 };
 
+const WEBSOCKET_URL = `wss://9101-103-217-111-153.ap.ngrok.io/websockets`;
+
 const VideoChat = () => {
   const userOneRef = React.useRef(null);
   const userTwoRef = React.useRef(null);
   const [peerConnection, setPeerConnection] = React.useState(null);
   const [socket, setSocket] = React.useState(null);
-  const [currentUser, setCurrentUser] = React.useState("");
+  const [currentUser, setCurrentUser] = React.useState("";)
+  const [enter, setEnter] = React.useState < boolean > false;
 
   const handleChangeText = React.useCallback(
     (event) => setCurrentUser(get(event, "target.value", "")),
     []
   );
-
-  const createPeerConnection = () => {
-    const peerConnection = new RTCPeerConnection(servers);
-    setPeerConnection(peerConnection);
-    return peerConnection;
-  };
 
   /**
    * Starting the webcam
@@ -59,7 +62,7 @@ const VideoChat = () => {
 
     if (userOneRef.current) userOneRef.current.srcObject = localStream;
     if (userTwoRef.current) userTwoRef.current.srcObject = remoteStream;
-  }, [peerConnection]);
+  }, [peerConnection, enter]);
 
   /**
    * Initiate a call
@@ -73,7 +76,6 @@ const VideoChat = () => {
             event: WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
             candidate: event.candidate.toJSON(),
             user: currentUser,
-            phoneType: PHONE.CALL,
           })
         );
       }
@@ -86,10 +88,9 @@ const VideoChat = () => {
     // Send the offer
     socket.send(
       JSON.stringify({
-        event: WEBSOCKET_CUSTOM_EVENTS.OFFER,
-        offer: offerDescription,
+        event: WEBSOCKET_CUSTOM_EVENTS.DESCRIPTION,
+        description: offerDescription,
         user: currentUser,
-        phoneType: PHONE.CALL,
       })
     );
   }, [currentUser, socket, peerConnection]);
@@ -106,7 +107,6 @@ const VideoChat = () => {
             event: WEBSOCKET_CUSTOM_EVENTS.CANDIDATE,
             candidate: event.candidate.toJSON(),
             user: currentUser,
-            phoneType: PHONE.ANSWER,
           })
         );
       }
@@ -119,74 +119,52 @@ const VideoChat = () => {
     // Send the answer
     socket.send(
       JSON.stringify({
-        event: WEBSOCKET_CUSTOM_EVENTS.OFFER,
-        offer: answerDescription,
+        event: WEBSOCKET_CUSTOM_EVENTS.DESCRIPTION,
+        description: answerDescription,
         user: currentUser,
-        phoneType: PHONE.ANSWER,
       })
     );
   }, [peerConnection, currentUser]);
 
+  const start = React.useCallback(() => {
+    setEnter(true);
+  }, []);
+
   React.useEffect(() => {
-    if (socket && peerConnection) {
-      socket.addEventListener(WEBSOCKET_EVENTS.OPEN, () =>
+    if (enter) {
+      const skt = new WebSocket(WEBSOCKET_URL);
+      setSocket(skt);
+
+      const peerConnection = new RTCPeerConnection(servers);
+      setPeerConnection(peerConnection);
+
+      skt.addEventListener(WEBSOCKET_EVENTS.OPEN, () =>
         console.debug("WebSocket is open")
       );
-      socket.addEventListener(WEBSOCKET_EVENTS.CLOSE, () =>
+      skt.addEventListener(WEBSOCKET_EVENTS.CLOSE, () =>
         console.debug("WebSocket is closed")
       );
-      socket.addEventListener(WEBSOCKET_EVENTS.ERROR, (_error) =>
+      skt.addEventListener(WEBSOCKET_EVENTS.ERROR, (_error) =>
         console.debug("Socker Events Error", _error)
       );
-      socket.addEventListener(WEBSOCKET_EVENTS.MESSAGE, (event) => {
+      skt.addEventListener(WEBSOCKET_EVENTS.MESSAGE, (event) => {
         const data = JSON.parse(get(event, "data", {}));
         const dataEvent = get(data, "event", "");
-        const datePhoneType = get(data, "phoneType", "");
-        const dataAnswer = get(data, "answer", null);
-        const dataOffer = get(data, "offer", null);
         const dataCandidate = get(data, "candidate", null);
         const dataUser = get(data, "user", "");
+        const dataDescription = get(data, "description", null);
 
-        /**
-         * Events from the call
-         */
-        // Receiving the answer from the other peer
         if (
-          dataEvent === WEBSOCKET_CUSTOM_EVENTS.OFFER &&
-          datePhoneType === PHONE.ANSWER
+          dataEvent === WEBSOCKET_CUSTOM_EVENTS.DESCRIPTION &&
+          dataUser !== currentUser
         ) {
-          if (!peerConnection.currentRemoteDescription) {
-            console.log(`Received answer from ${dataUser}`);
-            const answerDescription = new RTCSessionDescription(dataAnswer);
-            peerConnection.setRemoteDescription(answerDescription);
-          }
-        }
-        // Receiving the ice candidates from the other peer
-        if (
-          dataEvent === WEBSOCKET_CUSTOM_EVENTS.CANDIDATE &&
-          datePhoneType === PHONE.ANSWER
-        ) {
-          const candidate = new RTCIceCandidate(dataCandidate);
-          peerConnection.addIceCandidate(candidate);
+          const description = new RTCSessionDescription(dataDescription);
+          peerConnection.setRemoteDescription(description);
         }
 
-        /**
-         * Events from the answer
-         */
-        // Receiving the offer from the other peer
-        if (
-          dataEvent === WEBSOCKET_CUSTOM_EVENTS.OFFER &&
-          datePhoneType === PHONE.CALL
-        ) {
-          if (!peerConnection.currentRemoteDescription) {
-            const offerDescription = new RTCSessionDescription(dataOffer);
-            peerConnection.setRemoteDescription(offerDescription);
-          }
-        }
-        // Receiving the ice candidates from the other peer
         if (
           dataEvent === WEBSOCKET_CUSTOM_EVENTS.CANDIDATE &&
-          datePhoneType === PHONE.CALL
+          dataUser !== currentUser
         ) {
           const candidate = new RTCIceCandidate(dataCandidate);
           peerConnection.addIceCandidate(candidate);
@@ -194,38 +172,34 @@ const VideoChat = () => {
       });
 
       return () => {
-        if (socket) socket.close();
+        if (socket) skt.close();
       };
     }
-  }, [socket, peerConnection]);
+  }, [enter, currentUser]);
 
-  React.useEffect(() => {
-    const socketString = `ws://localhost:${SERVER_PORT}/websockets`;
-    const skt = new WebSocket(socketString);
-    setSocket(skt);
+  const EnterRoomContent = (
+    <>
+      <input
+        type="text"
+        value={currentUser}
+        placeholder="username"
+        onChange={handleChangeText}
+      />
+      <button onClick={start}>Enter Room</button>
+    </>
+  );
 
-    createPeerConnection(); // Create Peer Connection
-  }, []);
+  const ActionContent = (
+    <>
+      <button onClick={startWebcam}>Webcam Start</button>
+      <button onClick={call}>Call</button>
+      <button onClick={answer}>Answer</button>
+    </>
+  );
 
   return (
     <>
-      <div>
-        <button onClick={startWebcam}>Start Webcam</button>
-        <input
-          type="text"
-          value={currentUser}
-          placeholder="username"
-          onChange={handleChangeText}
-        />
-        {currentUser ? (
-          <>
-            <button onClick={call}>Call</button>
-            <button onClick={answer}>Answer</button>
-          </>
-        ) : (
-          <></>
-        )}
-      </div>
+      <div>{enter ? ActionContent : EnterRoomContent}</div>
       <div className="videos">
         <video
           autoPlay
