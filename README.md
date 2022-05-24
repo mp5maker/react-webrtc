@@ -1,4 +1,4 @@
-# (React WebRTC)[https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API]
+# [React WebRTC](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API)
 
 ## What is WebRTC?
 
